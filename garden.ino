@@ -217,7 +217,9 @@ function getRecent() {
 <center>
 <img src="https://static.wikia.nocookie.net/plantsvszombies/images/f/f8/2zfsax5_th.gif" height=72 width=64><br>
 <a href="/time"><input type="button" value="Изменить время освещения"></a><br>
-<a href="/clear"><input type="button" value="Очистить кэш"></a></center>
+<a href="/watering"><input type="button" value="Принудительный полив"></a><br>
+<a href="/clear"><input type="button" value="Очистить кэш"></a><br>
+<a href="/reboot"><input type="button" value="Перезагрузить теплицу"></a><br></center>
 </body>
 
 </html>
@@ -286,6 +288,21 @@ void handleForm() {
 }
 
 float humidity, temperature;
+
+long int lastWatering = 0;
+
+void doWatering(){
+  if(millis() - lastWatering >= 60000){
+    digitalWrite(15, HIGH);
+    delay(1000);
+    digitalWrite(15, LOW);
+    server.send(200, "text/html", "watering done! <a href='/'> Go Back </a>");
+    lastWatering = millis();
+  }
+  else{
+    server.send(200, "text/html", "Too recent! Please wait. <a href='/'> Go Back </a>");
+  }
+}
 
 void handleClear(){
   int a = 100-(analogRead(A0)/10);
@@ -590,11 +607,12 @@ void setup()
   dht.setup(DHTpin, DHTesp::DHT11); 
   WiFi.begin(ssid, password);
   Serial.println("");
-
+  //Onboard LED port Direction output
   pinMode(LED,OUTPUT); 
   pinMode(5,OUTPUT);
+  pinMode(15,OUTPUT);
   
-
+  // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -602,21 +620,28 @@ void setup()
   timeClient.begin();
 pinMode(4, OUTPUT);
 nokia();
+  //If connection successful show IP address in serial monitor
   Serial.println("");
   Serial.print("Connected to ");
   Serial.println(ssid);
   Serial.print("IP address: ");
-  Serial.println(WiFi.localIP()); 
-  server.on("/", handleRoot);     
-  server.on("/readADC", handleADC); 
+  Serial.println(WiFi.localIP());  //IP address assigned to your ESP
 
-server.on("/time", handleTime);      
+  server.on("/", handleRoot);      //Which routine to handle at root location. This is display page
+  server.on("/readADC", handleADC); //This page is called by java Script AJAX
+
+server.on("/time", handleTime);      //Which routine to handle at root location
   server.on("/time/action_page", handleForm);
-  server.on("/clear", handleClear);      
-  server.begin();
+  server.on("/clear", handleClear);      //Which routine to handle at root location
+  server.on("/watering", doWatering);
+  server.on("/reboot", ESP.restart);
+  server.begin();                  //Start server
   Serial.println("HTTP server started");
 }
 
+//==============================================================
+//                     LOOP
+//==============================================================
 void loop()
 {
   if(millis()%10000==0){
@@ -624,7 +649,7 @@ void loop()
     if(timeClient.getHours()>=EEPROM[0] and timeClient.getHours()<EEPROM[1]) digitalWrite(4, 1);
     else digitalWrite(4, 0);
     if(timeClient.getHours()==6 and timeClient.getMinutes() == 50) midi();
-    if(timeClient.getHours()==0 and timeClient.getMinutes() == 0 and timeClient.getSeconds() <= 15){
+    if(timeClient.getHours()%12==0 and timeClient.getMinutes() == 0 and timeClient.getSeconds() <= 15){
       int a = 100-(analogRead(A0)/10);
       delay(dht.getMinimumSamplingPeriod());
       humidity = dht.getHumidity();
@@ -638,6 +663,14 @@ void loop()
       f.close();
       delay(15000);
     }
+    
+    if(timeClient.getHours()==19 and timeClient.getMinutes() == 0 and timeClient.getSeconds() <= 15){
+      digitalWrite(15, HIGH);
+      delay(1000);
+      digitalWrite(15, LOW);
+      delay(15000);
+    }
+    
     delay(1);
   }
   if(millis()%60000<=5){
@@ -657,5 +690,38 @@ void loop()
   
   
   }
+  /*
+  if(millis()%1000==0){
+    if(100-(analogRead(A0)/10) <45){
+      while(100-(analogRead(A0)/10) <55){
+        digitalWrite(5, 1);
+        delay(10);
+      }
+      digitalWrite(5, 0);
+    }
+    else digitalWrite(5, 0);
+    delay(1);
+  }
+  
+
+  if(millis()%5000<=5){
+    byte pixNum = 0;
+    strip.clear();
+    pixNum = (timeClient.getHours() + 3) % 12;
+    if(timeClient.getHours()>7 and timeClient.getHours()<=21){
+      strip.setBrightness(32);
+    }
+    else {
+      strip.setBrightness(2);
+    }
+    strip.setPixelColor(pixNum,  0xff7514);
+    pixNum = (timeClient.getMinutes() / 5 + 3) % 12;
+    strip.setPixelColor(pixNum, 0xa7fc00);
+    pixNum = (timeClient.getSeconds() / 5 + 3) % 12;
+    strip.setPixelColor(pixNum, 0x1faee9);
+    strip.show();
+    delay(5);
+  }
+  */
   server.handleClient();          //Handle client requests
 }
